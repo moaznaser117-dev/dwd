@@ -1,0 +1,442 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "3-Tier Architecture with ReyazShaik GitHub App - No IAM"
+
+Parameters:
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: "Name of an existing EC2 KeyPair"
+    Default: myKeypair
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Description: "RDS Master Password"
+    Default: "MySecurePassword123!"
+    MinLength: 8
+    MaxLength: 41
+  GitHubRepo:
+    Type: String
+    Description: "GitHub repository URL"
+    Default: "https://github.com/ReyazShaik/3tier-app-deployment-aws.git"
+  AppPort:
+    Type: Number
+    Description: "Application port number"
+    Default: 3000
+
+Resources:
+
+  ### VPC ###
+  MyVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: MyVPC
+
+  ### Internet Gateway ###
+  MyIGW:
+    Type: AWS::EC2::InternetGateway
+
+  AttachIGW:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref MyVPC
+      InternetGatewayId: !Ref MyIGW
+
+  ### NAT Gateway ###
+  EIPNat:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+    DependsOn: AttachIGW
+
+  MyNatGW:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt EIPNat.AllocationId
+      SubnetId: !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: MyNATGateway
+
+  ### Public Subnets ###
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+
+  ### Private Subnets - Web Tier ###
+  PrivateSubnetWeb1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+
+  PrivateSubnetWeb2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.4.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+
+   ### Private Subnets - App Tier ###
+
+  PrivateSubnetApp1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.5.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+
+
+  PrivateSubnetApp2:
+     Type: AWS::EC2::Subnet
+     Properties:
+       VpcId: !Ref MyVPC
+       CidrBlock: 10.0.6.0/24
+       AvailabilityZone: !Select [1, !GetAZs ""]
+       MapPublicIpOnLaunch: false
+ 
+
+
+
+
+  ### Private Subnets - DB Tier ###
+  PrivateSubnetDB1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.7.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+
+  PrivateSubnetDB2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.8.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+
+
+  ### Route Tables ###
+  PublicRT:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRT
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref MyIGW
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRT
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRT
+
+  PrivateRT:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRT
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref MyNatGW
+
+  DBRT:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+
+  ### Associate Private Subnets ###
+  PrivateSubnetAssoc1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetApp1
+      RouteTableId: !Ref PrivateRT
+
+  PrivateSubnetAssoc2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetApp2
+      RouteTableId: !Ref PrivateRT
+
+  PrivateSubnetAssoc3:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetWeb1
+      RouteTableId: !Ref PrivateRT
+
+  PrivateSubnetAssoc4:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetDB1
+      RouteTableId: !Ref DBRT
+
+  PrivateSubnetAssoc5:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetDB2
+      RouteTableId: !Ref DBRT
+
+  PrivateSubnetAssoc6:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetWeb2
+      RouteTableId: !Ref DBRT
+
+  ### Security Groups ###
+  ALBSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ALB SG
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  WebSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Web SG
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ALBSG
+        - IpProtocol: tcp
+          FromPort: !Ref AppPort
+          ToPort: !Ref AppPort
+          SourceSecurityGroupId: !Ref ALBSG
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId: !Ref BastionSG
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  DBSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: DB SG
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref WebSG
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  BastionSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Bastion Host SG
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  ### Bastion Host ###
+  BastionHost:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-08982f1c5bf93d976
+      KeyName: !Ref KeyPairName
+      SubnetId: !Ref PublicSubnet1
+      SecurityGroupIds:
+        - !Ref BastionSG
+      Tags:
+        - Key: Name
+          Value: BastionHost
+
+  ### Application Load Balancer ###
+  MyALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: MyALB
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ALBSG
+
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref MyVPC
+      Port: !Ref AppPort
+      Protocol: HTTP
+      TargetType: instance
+      HealthCheckPath: /
+      HealthCheckPort: !Ref AppPort
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref MyALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+
+  ### Launch Template - بدون IAM Role ###
+  MyLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        InstanceType: t2.micro
+        ImageId: ami-08982f1c5bf93d976
+        SecurityGroupIds:
+          - !Ref WebSG
+        UserData: 
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -ex
+            
+            # Update and install dependencies
+            yum update -y
+            yum install -y git nginx
+            
+            # Install Node.js
+            curl -sL https://rpm.nodesource.com/setup_16.x | bash -
+            yum install -y nodejs
+            
+            # Clone and setup the application
+            mkdir -p /var/app
+            cd /var/app
+            git clone ${GitHubRepo} .
+            
+            # Install dependencies
+            npm install
+            
+            # Create a simple test page and start nginx
+            echo "<h1>3-Tier App Deployment Success!</h1>" > /usr/share/nginx/html/index.html
+            systemctl start nginx
+            systemctl enable nginx
+            
+            # If there's a package.json, try to start the app
+            if [ -f package.json ]; then
+              npm start &
+            fi
+
+  ### Auto Scaling Group ###
+  MyASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnetWeb1
+        - !Ref PrivateSubnetWeb2
+        - !Ref PrivateSubnetApp1
+        - !Ref PrivateSubnetApp2  
+      LaunchTemplate:
+        LaunchTemplateId: !Ref MyLaunchTemplate
+        Version: !GetAtt MyLaunchTemplate.LatestVersionNumber
+      MinSize: 1
+      MaxSize: 2
+      DesiredCapacity: 1
+      TargetGroupARNs:
+        - !Ref ALBTargetGroup
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+
+  ### RDS Database ###
+  MyDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: "DB Subnets"
+      SubnetIds:
+        - !Ref PrivateSubnetDB1
+        - !Ref PrivateSubnetDB2
+        
+  MyDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceClass: db.t3.micro
+      Engine: mysql
+      MasterUsername: admin
+      MasterUserPassword: !Ref DBPassword
+      AllocatedStorage: 20
+      BackupRetentionPeriod: 1
+      StorageEncrypted: true
+      VPCSecurityGroups:
+        - !Ref DBSG
+      DBSubnetGroupName: !Ref MyDBSubnetGroup
+
+  ### S3 Bucket ###
+  MyBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "my-bucket-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+Outputs:
+  ALBEndpoint:
+    Value: !GetAtt MyALB.DNSName
+    Description: "URL of the Application Load Balancer"
+  BastionPublicIP:
+    Value: !GetAtt BastionHost.PublicIp
+    Description: "Public IP of Bastion Host"
+  RDSEndpoint:
+    Value: !GetAtt MyDB.Endpoint.Address
+    Description: "RDS Database Endpoint"
+  S3BucketName:
+    Value: !Ref MyBucket
+    Description: "S3 Bucket Name"
+  ApplicationURL:
+    Value: !Sub "http://${MyALB.DNSName}"
+    Description: "Full application URL"
